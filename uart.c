@@ -1,7 +1,7 @@
 #include "nimh.h"
 #include "hic.h"
 
-#if 0
+#if 1
 const char digits[] = "0123456789abcdef";
 void send(u16 sData)
 {

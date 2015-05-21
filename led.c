@@ -39,13 +39,19 @@ void ledHandler(void)
 	//charging state
 	if(getSysTick() & SHOW_CHARGING_TICK)
 	{
-			if(gBatStateBuf[2] & 0x3C)
-				LED_ON(2);
+		for(i=1;i<5;i++)
+		{	
+			if(gBatStateBuf[i] & 0x38)
+				LED_ON(i);
+		}
 	}
 	else
 	{
-			if(gBatStateBuf[2] & 0x3C)
-				LED_OFF(2);
+		for(i=1;i<5;i++)
+		{
+			if((gBatStateBuf[i] & 0x38) && (gBatStateBuf[i] & CHARGE_STATE_FULL)==0)
+				LED_OFF(i);
+		}
 	}
 
 
@@ -54,13 +60,19 @@ void ledHandler(void)
 
 	if(getSysTick() & 0x08)
 	{
-			if(gBatStateBuf[2] & ((CHARGE_STATE_ERROR)|(BAT_TYPE_ERROR) ))
-				LED_ON(2);	
+		for(i=1;i<5;i++)
+		{
+			if(gBatStateBuf[i] & ((CHARGE_STATE_ERROR)|(BAT_TYPE_ERROR) ))
+				LED_ON(i);	
+		}
 	}
 	else
 	{
-			if(gBatStateBuf[2] & ((CHARGE_STATE_ERROR)|(BAT_TYPE_ERROR) ))
-				LED_OFF(2);		
+		for(i=1;i<5;i++)
+		{
+			if(gBatStateBuf[i] & ((CHARGE_STATE_ERROR)|(BAT_TYPE_ERROR) ))
+				LED_OFF(i);		
+		}
 	}
 
 	

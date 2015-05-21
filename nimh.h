@@ -26,27 +26,33 @@
 #define CHARGE_STATE_ERROR				(1<<6)
 #define CHARGE_STATE_PRE					(1<<5)
 #define CHARGE_STATE_FAST					(1<<4)
-#define CHARGE_STATE_SUP					(1<<3)
-#define CHARGE_STATE_TRICK					(1<<2)
+#define CHARGE_STATE_TRICK					(1<<3)
+#define CHARGE_STATE_FULL					(1<<2)
 #define BAT_DETECT_BIT						(1<<1)   //电池测试
 #define BAT_CHECK_BIT						(1<<0)   //有无电池
 
-#define BAT_MIN_VOLT_OPEN	496 			//(0.4/3.3)*4096
+#define BAT_MIN_VOLT_33_OPEN	472		//(0.3/2.6)*4096
+#define BAT_MIN_VOLT_OPEN	372 			//(0.3/3.3)*4096
 #define BAT_MAX_VOLT_OPEN	2110		//(1.7/3.3)*4096
 
 #define BAT_MAX_VOLT_CLOSE 2234		//(1.8/3.3)*4096	
 
 
 #define CHARGING_PRE_END_VOLT		1117			//(0.9/3.3)*4096
-#define CHARGING_FAST_END_VOLT	1737			//(1.4/3.3)*4096
+#define CHARGING_FAST_END_VOLT	1986			//(1.6/3.3)*4096
 
 
-#define BAT_CHARGING_PULSE_TIME	30   //500ms  500/16.384
+#define BAT_CHARGING_PULSE_TIME	61   //1000ms  1000/16.384
 #define BAT_CHARGING_DETECT_TIME	120
+
+#define BAT_CHARGING_TEST_TIME	7	
 
 #define BAT_CHARGING_PRE_MAX_TIME	73242	//20min   (20*60*1000)/16.384
 #define BAT_CHARGING_FAST_MAX_TIME	 659179             //  3hour  (3*60*60*1000)/16.384
 #define BAT_START_DV_CHECK			54931			   // 15min  (15*60*1000)/16.384
+
+#define BAT_DV_CHECK_INTERVAL			915			//15s  15*1000/16.384
+#define ADC_DV_VOLT						6			//5mv   0.005/3.3*4096
 
 
 #define FAST_SKIP_COUNT	0
@@ -69,7 +75,13 @@
 #define CHANNEL_VBAT_3	12
 #define CHANNEL_VABT_4	2
 
+#define CHANNEL_TEMP_1		5
+#define CHANNEL_TEMP_2		6
+
 #define CHANNEL_20_RES	13
+
+#define 	ADC_TEMP_MAX	1069    //55
+#define	ADC_TEMP_MIN	3007	//0
 
 #define BAT_VALID_VALUE	787
 
