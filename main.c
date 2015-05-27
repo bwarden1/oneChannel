@@ -90,7 +90,14 @@ void PreCharge(u8 batNum)
 void FastCharge(u8 batNum)
 {
 	u16 tempV,tempT;
-		
+	static u8 dropCount=0;	
+
+
+	if(batNum <3)		
+		tempT = getAverage(CHANNEL_TEMP_1);
+	else
+		tempT = getAverage(CHANNEL_TEMP_2);
+	
 	if(getDiffTickFromNow(gChargingTimeTick[batNum-1]) > BAT_START_DV_CHECK)  //hod-off time, in this period, we do NOT detect -dv
 	{
 		if(getDiffTickFromNow(gChargingIntervalTick[batNum-1]) > BAT_DV_CHECK_INTERVAL)
@@ -104,33 +111,56 @@ void FastCharge(u8 batNum)
 				gChargingIntervalTick[batNum-1] = 1;
 			}
 
+			PB &= 0xF0;
 			tempV = getVbatAdc(batNum);
-			if(batNum <3)		
-				tempT = getAverage(CHANNEL_TEMP_1);
-			else
-				tempT = getAverage(CHANNEL_TEMP_2);
-			if(tempV >= CHARGING_FAST_END_VOLT || getDiffTickFromNow(gChargingTimeTick[batNum-1]) > BAT_CHARGING_FAST_MAX_TIME || tempT < ADC_TEMP_MAX)
+			PB |= (1<<(batNum-1));
+			
+			if(tempV >= CHARGING_FAST_MAX_VOLT || getDiffTickFromNow(gChargingTimeTick[batNum-1]) > BAT_CHARGING_FAST_MAX_TIME || tempT < ADC_TEMP_MAX)
 			{
 				gBatStateBuf[batNum] &= ~CHARGE_STATE_FAST;
 				gBatStateBuf[batNum] |= CHARGE_STATE_TRICK;
 				gBatStateBuf[batNum] |= CHARGE_STATE_FULL;
 				gChargingTimeTick[batNum-1] = 0;
 				gChargingIntervalTick[batNum-1] = 0;
+				if(tempV >= CHARGING_FAST_MAX_VOLT)
+				LED_ON(3);
+				else
+				LED_ON(4);
 				return;
 			}
 			if(tempV > gBatVoltArray[batNum-1][0])
+			{
 				gBatVoltArray[batNum-1][0] = tempV;
+				dropCount = 0;
+			}
 			else
 			{
-				if((tempV - gBatVoltArray[batNum-1][0]) > ADC_DV_VOLT)
+				if((gBatVoltArray[batNum-1][0] - tempV) > ADC_DV_VOLT)
 				{
+					dropCount++;
+					if(dropCount >5)
+					{
 					gBatStateBuf[batNum] &= ~CHARGE_STATE_FAST;
 					gBatStateBuf[batNum] |= CHARGE_STATE_TRICK;
 					gBatStateBuf[batNum] |= CHARGE_STATE_FULL;
 					gChargingTimeTick[batNum-1] = 0;
 					gChargingIntervalTick[batNum-1] = 0;
+					LED_ON(1);
+					}
 				}
 			}
+		}
+	}
+	else
+	{
+		if(tempT < ADC_TEMP_MAX )
+		{
+			gBatStateBuf[batNum] &= ~CHARGE_STATE_FAST;
+			gBatStateBuf[batNum] |= CHARGE_STATE_TRICK;
+			gBatStateBuf[batNum] |= CHARGE_STATE_FULL;
+			gChargingTimeTick[batNum-1] = 0;
+			gChargingIntervalTick[batNum-1] = 0;
+			LED_ON(4);
 		}
 	}
 
@@ -186,12 +216,12 @@ void removeBat(u8 toChangeBatPos)
 	gIsChargingBatPos = 1;
 }
 
+u8 skipCount;
+
 void chargeHandler(void)
 {
 	u32 ticknow = getBatTick();
 	u16 tempV;
-
-	static u8 skipCount = 0;
 	
 	//close all pwm
 	//PB &= 0xF0;
@@ -285,7 +315,7 @@ void chargeHandler(void)
 						else if(gBatVoltArray[gBatNowBuf[gIsChargingBatPos]-1][0] < CHARGING_FAST_END_VOLT)
 							gBatStateBuf[gBatNowBuf[gIsChargingBatPos]] |= CHARGE_STATE_FAST;
 						else
-							gBatStateBuf[gBatNowBuf[gIsChargingBatPos]] |= CHARGE_STATE_TRICK;
+							gBatStateBuf[gBatNowBuf[gIsChargingBatPos]] |= (CHARGE_STATE_TRICK | CHARGE_STATE_FULL);
 					}
 						
 				}
@@ -309,8 +339,13 @@ void chargeHandler(void)
 				gIsChargingBatPos++;
 		}
 		else if(gIsChargingBatPos !=0 && (getDiffTickFromNow(ChargingTimeTick) > BAT_CHARGING_TEST_TIME))
-		{ 
+		{
 			tempV = getVbatAdc(gBatNowBuf[gIsChargingBatPos]);
+			if((gBatStateBuf[gBatNowBuf[gIsChargingBatPos]] & 0x38) == CHARGE_STATE_TRICK)
+			{
+				if(getDiffTickFromNow(ChargingTimeTick) > BAT_CHARGING_TRICK_TIME)
+					PB &=0xF0;
+			}
 			/*
 			if(gChargeCurrent<44)    // <1800mA
 			{
@@ -343,7 +378,7 @@ void chargeHandler(void)
 						gChargingTimeTick[gBatNowBuf[gIsChargingBatPos]-1] = 1;
 					}
 				}
-				switch(gBatStateBuf[gBatNowBuf[gIsChargingBatPos]] & 0x3C)
+				switch(gBatStateBuf[gBatNowBuf[gIsChargingBatPos]] & 0x38)
 				{
 					case CHARGE_STATE_FAST:
 							FastCharge(gBatNowBuf[gIsChargingBatPos]);break;
@@ -366,15 +401,13 @@ void InitConfig()
 	DisWatchdog();
 	
 	//IO led1~4  输出低
-	//PAT 	&=	0xFC; 
-	PAT &= 0xC4;
+	PAT 	&=	0xFC; 
 	PCT	&=	0xFC;
 	PA	|= 0x3;
 	PC   |= 0x3;
 
 	//pwm
-	//PBT &= 0xF0;
-	PBT &= 0xD0;
+	PBT &= 0xF0;
 	PB  &= 0xF0;
 
 	//timerN
@@ -394,8 +427,8 @@ void InitConfig()
 
 
 	//ADC	
-	//ANSL = 0x03;   //AIN2~AIN6
-	//ANSH = 0x9F;	 //AIN12 AIN13
+	ANSL = 0x03;   //AIN2~AIN6
+	ANSH = 0x9F;	 //AIN12 AIN13
 	#if 1
 	ADCTST = 0x00;   //AD转换速度为低速
 	ADCCL	= 0x05;  //硬件控制采样
@@ -426,6 +459,14 @@ void InitConfig()
 extern void LED_OFF(u8 led);
 extern void LED_ON(u8 led);
 extern void delay_ms(u16 nus);
+
+void led_blink()
+{
+	LED_ON(1);delay_ms(200);
+	LED_OFF(1);	delay_ms(200);
+	LED_ON(1);delay_ms(200);
+	LED_OFF(1);	delay_ms(200);	
+}
 void main() 
 {
 	
@@ -443,6 +484,8 @@ void main()
 
 	WDTC = 0x0F;
 
+	led_blink();
+
 	while(1)
 	{
 		if(gBatStateBuf[cur_detect_pos] & HAS_BATTERY)
@@ -453,53 +496,32 @@ void main()
 		{
 			if((gBatStateBuf[cur_detect_pos] & BAT_DETECT_BIT) == 0)
 			{	
-			//	gBatVoltArray[cur_detect_pos-1][0]=  getVbatAdc(cur_detect_pos);	//gBatVoltArray[cur_detect_pos-1][0]= getVbatAdc(cur_detect_pos);
+				gBatVoltArray[cur_detect_pos-1][0]=  getVbatAdc(cur_detect_pos);	//gBatVoltArray[cur_detect_pos-1][0]= getVbatAdc(cur_detect_pos);
 				
-				if(gBatVoltArray[cur_detect_pos-1][0] >= BAT_MIN_VOLT_33_OPEN)
+				if(gBatVoltArray[cur_detect_pos-1][0] >= BAT_MIN_VOLT_OPEN)
 				{
-					//if(gBatVoltArray[cur_detect_pos-1][0] >= BAT_MAX_VOLT_OPEN)
-					//{
+					if(gBatVoltArray[cur_detect_pos-1][0] >= BAT_MAX_VOLT_OPEN)
+					{
 						gBatStateBuf[cur_detect_pos] |= BAT_TYPE_ERROR;
-					//}
-					//else
-					//{
-					//	gBatStateBuf[cur_detect_pos] |= (CHARGE_STATE_FAST|BAT_DETECT_BIT);
-					//}
-					//gBatNumNow++;	
-					//gBatNowBuf[gBatNumNow] = cur_detect_pos;
+					}
+					else
+					{
+						gBatStateBuf[cur_detect_pos] |= (CHARGE_STATE_FAST|BAT_DETECT_BIT);
+					}
+					gBatNumNow++;	
+					gBatNowBuf[gBatNumNow] = cur_detect_pos;
 				}
 			}
 		}
-	//	chargeHandler();
-	//	ledHandler();
+		chargeHandler();
+		ledHandler();
 
-	PA4 = 1;
-	PA3=1;
-	PB5 =1;
-	PA5 = 1;
-	LED_ON(1);
-	delay_ms(1000);
-	PA4 = 0;
-	PA3 = 0;
-	PB5 = 0;
-	PA5 = 0;
-	LED_OFF(1);
-	delay_ms(1000);
 
-/*
+
 		cur_detect_pos++;
 		if(cur_detect_pos > 4)
 			cur_detect_pos=1;
-*/
-/*
-			send(gBatVoltArray[0][0]);
-			send(gBatVoltArray[1][0]);
-			send(gBatVoltArray[2][0]);
-			send(gBatVoltArray[3][0]);
-			send(0xAAAA);
-			*/
 
-	//	delay_ms(100);
 		__Asm CWDT;
 
 	}
