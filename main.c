@@ -2,11 +2,16 @@
 #include <hic.h>
 #include "nimh.h"
 
-u32 tick=0;
 u32 shortTick=0;
 u8 gIsChargingBatPos=1;   //此刻正在充电电池的标记    
 
-
+				char fuck[] ="volatage detect: ";
+				char enter[] = "\r\n";
+				char stopMaxVolt[] = "stop by max volt";
+				char stopMaxTime[] = "stop by max time";
+				char stopdV[] = "stop by -dV";
+				char stopMaxTemp[] =  "stop by max temp";
+				char stopError[] = "bar stop condition";
 u32 ChargingTimeTick = 0;
 u16 gChargeCurrent;
 
@@ -39,11 +44,13 @@ u8 gBatNowBuf[5]={0,0,0,0,0};  //存放充电器上电池的标号
 
 void isr(void) interrupt
 {
+	/*
 	if(T8NIF)
 	{
 		T8NIF = 0;
 		tick++;
 	}
+	*/
 	if(T8P1IF)
 	{
 		T8P1IF=0;
@@ -97,11 +104,17 @@ void FastCharge(u8 batNum)
 		tempT = getAverage(CHANNEL_TEMP_1);
 	else
 		tempT = getAverage(CHANNEL_TEMP_2);
-	
+
+	tempV = getVbatAdc(batNum);
+	send(tempV);
 	if(getDiffTickFromNow(gChargingTimeTick[batNum-1]) > BAT_START_DV_CHECK)  //hod-off time, in this period, we do NOT detect -dv
 	{
-		if(getDiffTickFromNow(gChargingIntervalTick[batNum-1]) > BAT_DV_CHECK_INTERVAL)
+
+		tempV = ((gBatVoltArray[batNum-1][0]<<2)+tempV)/5;
+		send(tempV);
+		//if(getDiffTickFromNow(gChargingIntervalTick[batNum-1]) > BAT_DV_CHECK_INTERVAL)
 		{
+				sendStr(enter);
 			gChargingIntervalTick[batNum-1] = getSysTick();
 			if(gChargingIntervalTick[batNum-1] == 0)
 			{
@@ -110,10 +123,6 @@ void FastCharge(u8 batNum)
 				GIE = 1;
 				gChargingIntervalTick[batNum-1] = 1;
 			}
-
-			PB &= 0xF0;
-			tempV = getVbatAdc(batNum);
-			PB |= (1<<(batNum-1));
 			
 			if(tempV >= CHARGING_FAST_MAX_VOLT || getDiffTickFromNow(gChargingTimeTick[batNum-1]) > BAT_CHARGING_FAST_MAX_TIME || tempT < ADC_TEMP_MAX)
 			{
@@ -123,9 +132,17 @@ void FastCharge(u8 batNum)
 				gChargingTimeTick[batNum-1] = 0;
 				gChargingIntervalTick[batNum-1] = 0;
 				if(tempV >= CHARGING_FAST_MAX_VOLT)
-				LED_ON(3);
+				{
+					sendStr(stopMaxVolt);
+					sendStr(enter);
+					LED_ON(3);
+				}
 				else
-				LED_ON(4);
+				{
+					sendStr(stopMaxTime);
+					sendStr(enter);
+					LED_ON(4);
+				}
 				return;
 			}
 			if(tempV > gBatVoltArray[batNum-1][0])
@@ -140,6 +157,8 @@ void FastCharge(u8 batNum)
 					dropCount++;
 					if(dropCount >5)
 					{
+					sendStr(stopdV);
+					sendStr(enter);
 					gBatStateBuf[batNum] &= ~CHARGE_STATE_FAST;
 					gBatStateBuf[batNum] |= CHARGE_STATE_TRICK;
 					gBatStateBuf[batNum] |= CHARGE_STATE_FULL;
@@ -153,8 +172,13 @@ void FastCharge(u8 batNum)
 	}
 	else
 	{
+			sendStr(enter);
+		gBatVoltArray[batNum-1][0] = tempV;
+		
 		if(tempT < ADC_TEMP_MAX )
 		{
+			sendStr(stopMaxTemp);
+			sendStr(enter);
 			gBatStateBuf[batNum] &= ~CHARGE_STATE_FAST;
 			gBatStateBuf[batNum] |= CHARGE_STATE_TRICK;
 			gBatStateBuf[batNum] |= CHARGE_STATE_FULL;
@@ -206,7 +230,7 @@ void removeBat(u8 toChangeBatPos)
 
 	LED_OFF(gBatNowBuf[toChangeBatPos]);
 	PB &= 0xF0;   //close current pwm channel
-	
+
 	for(i=toChangeBatPos;i<gBatNumNow;i++)
 	{
 		gBatNowBuf[i] = gBatNowBuf[i+1];
@@ -220,7 +244,6 @@ u8 skipCount;
 
 void chargeHandler(void)
 {
-	u32 ticknow = getBatTick();
 	u16 tempV;
 	
 	//close all pwm
@@ -284,6 +307,9 @@ void chargeHandler(void)
 			if(getDiffTickFromNow(ChargingTimeTick)>BAT_CHARGING_DETECT_TIME)
 			{
 				tempV = getVbatAdc(gBatNowBuf[gIsChargingBatPos]);
+				sendStr(fuck);
+				send(tempV);
+				sendStr(enter);
 				if(tempV<BAT_MIN_VOLT_OPEN)   //电池被拔出
 				{
 					ChargingTimeTick = 0;
@@ -324,7 +350,19 @@ void chargeHandler(void)
 		}
 		 else if(getDiffTickFromNow(ChargingTimeTick)  > BAT_CHARGING_PULSE_TIME)   //change to next channel
 		{
+			tempV = getVbatAdc(gBatNowBuf[gIsChargingBatPos]);
+			if(PB & (1<<(gBatNowBuf[gIsChargingBatPos]-1)))
+			{
+				sendF(getSysTick());
+				send(tempV);
+				send(gChargeCurrent);
+			}
+			
 			PB &= 0xF0;   //close current pwm channel
+
+			if((gBatStateBuf[gBatNowBuf[gIsChargingBatPos]] & 0x38) == CHARGE_STATE_FAST)
+				FastCharge(gBatNowBuf[gIsChargingBatPos]);
+			
 			ChargingTimeTick = 0;
 			if(gIsChargingBatPos >= gBatNumNow)
 			{
@@ -341,11 +379,11 @@ void chargeHandler(void)
 		else if(gIsChargingBatPos !=0 && (getDiffTickFromNow(ChargingTimeTick) > BAT_CHARGING_TEST_TIME))
 		{
 			tempV = getVbatAdc(gBatNowBuf[gIsChargingBatPos]);
-			if((gBatStateBuf[gBatNowBuf[gIsChargingBatPos]] & 0x38) == CHARGE_STATE_TRICK)
-			{
-				if(getDiffTickFromNow(ChargingTimeTick) > BAT_CHARGING_TRICK_TIME)
-					PB &=0xF0;
-			}
+			//if((gBatStateBuf[gBatNowBuf[gIsChargingBatPos]] & 0x38) == CHARGE_STATE_TRICK)
+			//{
+			//	if(getDiffTickFromNow(ChargingTimeTick) > BAT_CHARGING_TRICK_TIME)
+			//		PB &=0xF0;
+			//}
 			/*
 			if(gChargeCurrent<44)    // <1800mA
 			{
@@ -360,8 +398,10 @@ void chargeHandler(void)
 				LED_OFF(1);LED_OFF(4);LED_ON(3);
 			}
 			*/
-			if(tempV < BAT_MIN_VOLT_OPEN || ((PB & (1<<(gBatNowBuf[gIsChargingBatPos]-1))) &&gChargeCurrent  < 3))
+			if(tempV < BAT_MIN_VOLT_OPEN || ((PB & (1<<(gBatNowBuf[gIsChargingBatPos]-1))) &&gChargeCurrent  < 3) /*|| tempV > BAT_MAX_VOLT_CLOSE*/)
 			{
+					sendStr(stopError);
+					sendStr(enter);
 					ChargingTimeTick = 0;
 					removeBat(gIsChargingBatPos);
 			}
@@ -380,8 +420,8 @@ void chargeHandler(void)
 				}
 				switch(gBatStateBuf[gBatNowBuf[gIsChargingBatPos]] & 0x38)
 				{
-					case CHARGE_STATE_FAST:
-							FastCharge(gBatNowBuf[gIsChargingBatPos]);break;
+				//	case CHARGE_STATE_FAST:
+				//			FastCharge(gBatNowBuf[gIsChargingBatPos]);break;
 				//	case CHARGE_STATE_SUP:
 				//			 SupCharge(gBatNowBuf[gIsChargingBatPos]);break;
 					case CHARGE_STATE_PRE:
@@ -413,10 +453,12 @@ void InitConfig()
 	//timerN
 	//bit    000(1:128) 	 1(en)	  NE	      0(timer mode)       1(时钟源为WDT)      0( dis)
 	//	T8NPRS	    T8NPRE	T8NEG  T8NM	                T8NCLK		                      T8EN
+	/*
 	T8NC =   0x4E;
 	T8N = 0;
 	T8NIF = 0;
 	T8NIE=1;
+	*/
 
 	//t8p1
 	T8P1=0; //celar count
@@ -440,7 +482,7 @@ void InitConfig()
 	VRC1 = 0x80;      // internal 2.6V enbale
 	#endif
 
-/*
+
 	//uart
     PC = 0;         //设置PC端口输出低电平 
     PCT1 = 0;       //TX方向输出
@@ -451,7 +493,7 @@ void InitConfig()
     TXEN = 1;       //UART发送使能   
 // RXM = 0;        //接收8位数据格式
    //RXEN = 1;       //UART接收使能
-*/
+
 	
 }
 
@@ -479,7 +521,7 @@ void main()
 	RCEN=1;
 	GIE=1;
 
-	t8n_start();
+	//t8n_start();
 	t8p1_start();
 
 	WDTC = 0x0F;

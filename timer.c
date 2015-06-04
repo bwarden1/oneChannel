@@ -33,6 +33,7 @@ u32 getSysTick()
 	return tempTick;
 }
 
+/*
 u32 getBatTick()
 {
 	u32 tempTick;
@@ -44,6 +45,7 @@ u32 getBatTick()
 
 	return tempTick;
 }
+*/
 
 u32 getDiffTickFromNow(u32 ttick)
 {
